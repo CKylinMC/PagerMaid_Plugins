@@ -1,13 +1,16 @@
 """
 PagerMaid Plugin Soutu
 
-Core codes copied from 666wcy/search_photo-telegram-bot-heroku and pic2sticker.py
+Some of codes was copied from pic2sticker.
 
+**This not a ready-to-use plugin, you need to specify a API KEY first!**
 """
 import re
 import requests
 import time
+import json
 import os
+from bs4 import BeautifulSoup
 from io import BytesIO
 from telethon.tl.types import DocumentAttributeFilename, MessageMediaPhoto, MessageMediaWebPage
 from PIL import Image, ImageOps
@@ -26,28 +29,28 @@ engines = ['saucenao']
 
 helpmsg = """
 以图搜图
-
+使用 SauceNao 搜索图片
+对一个图片回复
+-soutu
+即可，使用
+-soutu full
+尝试自动从Pixiv下载原图
 """
 
+#TODO: Use redis to allow set key from commands
 @listener(is_plugin=True, outgoing=True, command=alias_command("soutu"), diagnostics=True, ignore_edited=True,
           description=helpmsg,
           parameters="<searchengine>")
 async def sendatwrap(context):
     engine = 'saucenao'
+    fi = False
     try:
         context.edit("准备中...")
     except:
         pass
-    if len(context.parameter)>=1:
-        if context.parameter[0] in engines:
-            engine = context.parameter[0]
-        else:
-            try:
-                await context.edit(lang('arg_error'))
-            except:
-                pass
-            return
     message = await context.get_reply_message()
+    if len(context.parameter)>0 and (context.parameter[0] == "full" or context.parameter[0] == "org"):
+        fi = True
     if message and message.media:
         if isinstance(message.media, MessageMediaPhoto):
             photo = BytesIO()
@@ -87,7 +90,7 @@ async def sendatwrap(context):
     try:
         if photo:
             try:
-                await context.edit(lang('sticker_resizing'))
+                await context.edit("正在准备...")
             except:
                 pass
             # image = await resize_image(photo)
@@ -97,20 +100,31 @@ async def sendatwrap(context):
             afile.name = "asticker.png"
             aimage.save(afile,"PNG")
             afile.seek(0)
-            await searchByPySauceNao(afile,context)
+            try:
+                await context.edit("正在搜索...")
+            except:
+                pass
+            await searchByPySauceNao(afile,context,fi)
     except Exception as e:
         try:
             await context.edit("搜索出错:"+str(e))
         except:
             pass
 
-async def searchByPySauceNao(photo,context,requireFullImg = False):
-    session = requests.Session()
+async def searchByPySauceNao(photo,context,reqFullImg=False):
+    s = requests.Session()
     sauce = SauceNao(api_key=SauceNaoAPIKEY)
     results = await sauce.from_file(photo)
     if len(results) == 0:
-        await edit(context,"没有找到结果")
+        try:
+            await context.edit("没有找到结果...")
+        except:
+            pass
     else:
+        try:
+            await context.edit("已找到匹配...")
+        except:
+            pass
         text = "**[{title}]({sourceurl})**\n作者: [{author}]({authorurl})\n[{provider}]({url})({similarity}%)".format(
             title = results[0].title,
             sourceurl = results[0].source_url,
@@ -120,16 +134,54 @@ async def searchByPySauceNao(photo,context,requireFullImg = False):
             url = results[0].url,
             similarity = results[0].similarity
         )
-        target = None
-        if requireFullImg:
-            target = session.get(results[0].thumbnail)
-        else:
-            target = session.get(results[0].thumbnail)
+        target = s.get(results[0].thumbnail)
         await bot.send_file(context.chat_id,target.content,caption=text)
-        try:
-            await context.delete()
-        except:
-            pass
+        if reqFullImg:
+            try:
+                await context.edit("正在上传原图...")
+            except:
+                pass
+            r = s.get(results[0].url)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, 'lxml')
+                dataelem = soup.find('meta', id='meta-preload-data')
+                if dataelem is not None :
+                    try:
+                        data = json.loads(soup.find('meta', id='meta-preload-data')['content'])
+                        iid = list(data['illust'].keys())[0]
+                        original = data['illust'][list(data['illust'].keys())[0]]['urls']['original']
+                        org = s.get(original,headers={'Referer':'https://app-api.pixiv.net/'})
+                        if org.status_code == 200:
+                            await bot.send_file(context.chat_id,org.content,caption="Pixiv illust="+iid+"\n原图")
+                            try:
+                                await context.delete()
+                            except:
+                                pass
+                        else:
+                            try:
+                                await context.edit("下载原图失败")
+                            except:
+                                pass
+                    except Exception as e:
+                        try:
+                            await context.edit("解析原图信息失败:"+str(e))
+                        except:
+                            pass
+                else:
+                    try:
+                        await context.edit("获取原图信息失败")
+                    except:
+                        pass
+            else:
+                try:
+                    await context.edit("获取原图失败，原图可能已经删除")
+                except:
+                    pass
+        else:
+            try:
+                await context.delete()
+            except:
+                pass
 
 
 async def resize_image(photo):
