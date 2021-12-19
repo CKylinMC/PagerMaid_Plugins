@@ -6,11 +6,7 @@ Core codes copied from 666wcy/search_photo-telegram-bot-heroku and pic2sticker.p
 """
 import re
 import requests
-import base64
 import time
-import datetime
-from urllib import parse
-from bs4 import BeautifulSoup
 import os
 from io import BytesIO
 from telethon.tl.types import DocumentAttributeFilename, MessageMediaPhoto, MessageMediaWebPage
@@ -20,7 +16,13 @@ from pagermaid import bot
 from pagermaid.utils import alias_command,pip_install,lang
 from pagermaid.listener import listener
 
-engines = ['iqdb','saucenao']
+try:
+    pip_install("pysaucenao")
+    from pysaucenao import SauceNao
+except:
+    pass
+
+engines = ['saucenao']
 
 helpmsg = """
 以图搜图
@@ -32,6 +34,10 @@ helpmsg = """
           parameters="<searchengine>")
 async def sendatwrap(context):
     engine = 'saucenao'
+    try:
+        context.edit("准备中...")
+    except:
+        pass
     if len(context.parameter)>=1:
         if context.parameter[0] in engines:
             engine = context.parameter[0]
@@ -78,110 +84,81 @@ async def sendatwrap(context):
         except:
             pass
         return
-
-    if photo:
-        file = BytesIO()
-        try:
-            await context.edit(lang('sticker_resizing'))
-        except:
-            pass
-        image = await resize_image(photo)
-        if pic_round:
+    try:
+        if photo:
             try:
-                await context.edit(lang('us_static_rounding'))
+                await context.edit(lang('sticker_resizing'))
             except:
                 pass
-            image = await rounded_image(image)
-        file.name = "sticker.webp"
-        image.save(file, "WEBP")
-        file.seek(0)
+            # image = await resize_image(photo)
+            # aimage = await resize_image(photo)
+            aimage = Image.open(photo)
+            afile = BytesIO()
+            afile.name = "asticker.png"
+            aimage.save(afile,"PNG")
+            afile.seek(0)
+            await searchByPySauceNao(afile,context)
+    except Exception as e:
         try:
-            await context.edit(lang('us_static_uploading'))
+            await context.edit("搜索出错:"+str(e))
         except:
             pass
-        await bot.send_file(context.chat_id, file, force_document=False)
+
+async def searchByPySauceNao(photo,context,requireFullImg = False):
+    session = requests.Session()
+    apikey = '4e00b7879777c8937fd06573c71d3a3c8696c59d'
+    sauce = SauceNao(api_key='4e00b7879777c8937fd06573c71d3a3c8696c59d')
+    results = await sauce.from_file(photo)
+    if len(results) == 0:
+        await edit(context,"没有找到结果")
+    else:
+        text = "**[{title}]({sourceurl})**\n作者: [{author}]({authorurl})\n[{provider}]({url})({similarity}%)".format(
+            title = results[0].title,
+            sourceurl = results[0].source_url,
+            author = results[0].author_name,
+            authorurl = results[0].author_url,
+            provider = results[0].index,
+            url = results[0].url,
+            similarity = results[0].similarity
+        )
+        target = None
+        if requireFullImg:
+            target = session.get(results[0].thumbnail)
+        else:
+            target = session.get(results[0].thumbnail)
+        await bot.send_file(context.chat_id,target.content,caption=text)
         try:
             await context.delete()
         except:
             pass
 
-async def saucenao(photo_file,context):
-    try:
-        url="https://saucenao.com/search.php"
-        #url = "https://saucenao.com"
-        Header = {
-            'Host': 'saucenao.com',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:75.0) Gecko/20100101 Firefox/75.0',
-            'Accept': 'text/html, application/xhtml+xml, application/xml;q = 0.9, */*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-        }
-        payloaddata = {
-            'frame': 1,
-            'hide': 0,
-            'database': 999,
-        }
-        #photo_file=requests.get(photo_url)
-        files = {"file": (
-        "saucenao.jpg", photo_file.content, "image/png")}
-        context.edit("正在搜索中...")
-        #bot.send_message(chat_id=chat_id,text="正在搜索saucenao")
-        r = session.post(url=url, headers=Header, data=payloaddata,files=files)
-        #r = session .get(url=url,headers=Header)
-        soup = BeautifulSoup(r.text, 'html.parser')
-        #print(soup.prettify())
-        result=0
-        choice=0
-        for img in soup.find_all('div', attrs={'class': 'result'}):  # 找到class="wrap"的div里面的所有<img>标签
-            #print(img)
-            if('hidden' in str(img['class']))==False:
-                try:
-                    name=img.find("div",attrs={'class': 'resulttitle'}).get_text()
-                    img_url=str(img.img['src'])
-                    describe_list=img.find("div",attrs={'class': 'resultcontentcolumn'})
-                    url_list = img.find("div", attrs={'class': 'resultcontentcolumn'}).find_all("a",  attrs={'class': 'linkify'})
-                    similarity = str(img.find("div", attrs={'class': 'resultsimilarityinfo'}).get_text())
-                    print(name)
-                except:
-                    continue
-                try:
-                    describe = str(url_list[0].previous_sibling.string)
-                    describe_id = str(url_list[0].string)
-                    describe_url = str(url_list[0]['href'])
-                    auther_url = str(url_list[1]['href'])
-                    auther = str(url_list[1].previous_sibling.string)
-                    auther_id = str(url_list[1].string)
-                    '''print(name)
-                    print(img_url)
-                    print(describe)
-                    print(describe_id)
-                    print(similarity)
-                    print(auther)
-                    print(auther_id)
-                    print(describe_url)'''
-                    text = f"{name}\n{describe}[{describe_id}]({describe_url})\n{auther}:[{auther_id}]({auther_url})\n相似度{similarity}"
-                except:
-                    '''print(describe_list.get_text())
-                    print(describe_list.strong.string)
-                    print(describe_list.strong.next_sibling.string)
-                    print(describe_list.small.string)
-                    print(describe_list.small.next_sibling.next_sibling.string)'''
-                    auther = str(describe_list.strong.string)
-                    auther_id = str(describe_list.strong.next_sibling.string)
-                    describe = str(describe_list.small.string) + "\n" + str(describe_list.small.next_sibling.next_sibling.string)
-                    text = f"{name}\n{auther}:{auther_id}\n{describe}\n相似度{similarity}"
 
-                photo_file = session.get(img_url)
-                bot.send_photo(chat_id=context.chat_id,photo=photo_file.content,parse_mode='Markdown',caption=text)
-                result=1
-        if result==0:
-            try:
-                await content.edit("无匹配结果")
-            except:
-                pass
+async def resize_image(photo):
+    image = Image.open(photo)
+    maxsize = (1024, 1024)
+    if (image.width and image.height) < 1024:
+        size1 = image.width
+        size2 = image.height
+        if image.width > image.height:
+            scale = 1024 / size1
+            size1new = 1024
+            size2new = size2 * scale
+        else:
+            scale = 1024 / size2
+            size1new = size1 * scale
+            size2new = 1024
+        size1new = floor(size1new)
+        size2new = floor(size2new)
+        size_new = (size1new, size2new)
+        image = image.resize(size_new)
+    else:
+        image.thumbnail(maxsize)
+    return image
+
+
+async def edit(context,text=""):
+    try:
+        context.edit(text)
     except:
-        try:
-            await content.edit("搜索出错")
-        except:
-            pass
+        pass
+    return
