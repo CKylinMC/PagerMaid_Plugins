@@ -789,6 +789,16 @@
             "supported": true,
             "des-short": "获取新冠疫情信息。（国家版）",
             "des": "获取新冠疫情信息。（国家版）。\n指令：-covid-en"
+        },
+        {
+            "name": "soutu",
+            "version": "1.0",
+            "section": "chat",
+            "maintainer": "CKylinMC",
+            "size": "1.70 kb",
+            "supported": true,
+            "des-short": "以图搜图",
+            "des": "回复一个图片进行以图搜图\n指令：-soutu"
         }
     ]
 }
