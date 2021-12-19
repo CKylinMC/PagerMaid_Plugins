@@ -21,7 +21,7 @@ try:
     from pysaucenao import SauceNao
 except:
     pass
-
+SauceNaoAPIKEY = ""
 engines = ['saucenao']
 
 helpmsg = """
@@ -106,8 +106,7 @@ async def sendatwrap(context):
 
 async def searchByPySauceNao(photo,context,requireFullImg = False):
     session = requests.Session()
-    apikey = '4e00b7879777c8937fd06573c71d3a3c8696c59d'
-    sauce = SauceNao(api_key='4e00b7879777c8937fd06573c71d3a3c8696c59d')
+    sauce = SauceNao(api_key=SauceNaoAPIKEY)
     results = await sauce.from_file(photo)
     if len(results) == 0:
         await edit(context,"没有找到结果")
